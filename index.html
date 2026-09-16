@@ -1,1 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Pixelart Horror Obby — Base64 Sprite Loader</title>
+  <style>
+    body { margin: 0; background: #000; color: #fff; font-family: monospace; }
+    canvas { display: block; margin: 0 auto; image-rendering: pixelated; }
+    #slotBox {
+      width: 100%;
+      height: 80px;
+      background: #111;
+      color: #0f0;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+
+<!-- BASE64 SLOT -->
+<textarea id="slotBox" placeholder="Paste your BASE64 PNG here (no quotes, no data:image prefix)"></textarea>
+<button id="loadBtn">LOAD SPRITE</button>
+
+<canvas id="game" width="320" height="180"></canvas>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// --- SPRITE LOADING FROM BASE64 ---
+let sprite = new Image();
+document.getElementById('loadBtn').onclick = () => {
+  const raw = document.getElementById('slotBox').value.trim();
+  if (!raw) return alert("No base64 found!");
+
+  // Build proper data URL
+  sprite.src = "data:image/png;base64," + raw;
+};
+
+// --- SPRITE INFO ---
+const FRAME_W = 32;   // change if needed
+const FRAME_H = 32;
+let frameIndex = 1;
+let frameTimer = 0;
+const FRAME_SPEED = 10;
+
+// --- INPUT ---
+const keys = {};
+window.addEventListener('keydown', e => keys[e.key] = true);
+window.addEventListener('keyup', e => keys[e.key] = false);
+
+// --- PLAYER ---
+const player = {
+  x: 20, y: 120,
+  w: FRAME_W, h: FRAME_H,
+  vx: 0, vy: 0,
+  onGround: false
+};
+
+const gravity = 0.4;
+const speed = 1.2;
+const jumpPower = -5;
+
+// --- LEVEL ---
+const platforms = [
+  { x: 0, y: 140, w: 320, h: 40 },
+  { x: 80, y: 110, w: 40, h: 10 },
+  { x: 140, y: 90, w: 40, h: 10 },
+  { x: 210, y: 70, w: 40, h: 10 }
+];
+
+const spikes = [
+  { x: 120, y: 132, w: 20, h: 8 },
+  { x: 190, y: 124, w: 20, h: 8 }
+];
+
+const exitDoor = { x: 260, y: 56, w: 16, h: 24 };
+
+// --- ENTITY ---
+const entity = { x: 200, y: 120, w: 10, h: 14, dir: -1, speed: 0.5 };
+
+// --- GAME STATE ---
+let gameState = 'play';
+
+// --- COLLISION ---
+function rectCollide(a, b) {
+  return a.x < b.x + b.w &&
+         a.x + a.w > b.x &&
+         a.y < b.y + b.h &&
+         a.y + a.h > b.y;
+}
+
+function resetPlayer() {
+  player.x = 20;
+  player.y = 120;
+  player.vx = 0;
+  player.vy = 0;
+  player.onGround = false;
+}
+
+// --- UPDATE ---
+function update() {
+  if (gameState !== 'play') return;
+
+  player.vx = 0;
+  if (keys['a'] || keys['ArrowLeft']) player.vx = -speed;
+  if (keys['d'] || keys['ArrowRight']) player.vx = speed;
+
+  if ((keys[' '] || keys['Space']) && player.onGround) {
+    player.vy = jumpPower;
+    player.onGround = false;
+  }
+
+  player.vy += gravity;
+  player.x += player.vx;
+
+  platforms.forEach(p => {
+    if (rectCollide(player, p)) {
+      if (player.vx > 0) player.x = p.x - player.w;
+      if (player.vx < 0) player.x = p.x + p.w;
+    }
+  });
+
+  player.y += player.vy;
+  player.onGround = false;
+
+  platforms.forEach(p => {
+    if (rectCollide(player, p)) {
+      if (player.vy > 0) {
+        player.y = p.y - player.h;
+        player.vy = 0;
+        player.onGround = true;
+      } else if (player.vy < 0) {
+        player.y = p.y + p.h;
+        player.vy = 0;
+      }
+    }
+  });
+
+  spikes.forEach(s => {
+    if (rectCollide(player, s)) gameState = 'dead';
+  });
+
+  entity.x += entity.dir * entity.speed;
+  if (entity.x < 180 || entity.x > 230) entity.dir *= -1;
+
+  if (rectCollide(player, entity)) gameState = 'dead';
+
+  if (rectCollide(player, exitDoor)) gameState = 'win';
+
+  // Animation
+  if (player.vx !== 0) {
+    frameTimer++;
+    if (frameTimer > FRAME_SPEED) {
+      frameTimer = 0;
+      frameIndex = (frameIndex + 1) % 3;
+    }
+  } else {
+    frameIndex = 1;
+  }
+}
+
+// --- DRAW ---
+function draw() {
+  ctx.fillStyle = '#050508';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = '#111';
+  for (let i = 0; i < 80; i++) {
+    ctx.fillRect(Math.random()*320, Math.random()*180, 1, 1);
+  }
+
+  ctx.fillStyle = '#333';
+  platforms.forEach(p => ctx.fillRect(p.x, p.y, p.w, p.h));
+
+  ctx.fillStyle = '#a00';
+  spikes.forEach(s => ctx.fillRect(s.x, s.y, s.w, s.h));
+
+  ctx.fillStyle = '#0f0';
+  ctx.fillRect(exitDoor.x, exitDoor.y, exitDoor.w, exitDoor.h);
+
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(entity.x, entity.y, entity.w, entity.h);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(entity.x+2, entity.y+4, 2, 2);
+
+  // Draw sprite if loaded
+  if (sprite.complete && sprite.src.startsWith("data:image")) {
+    const sx = frameIndex * FRAME_W;
+    const sy = 0;
+    ctx.drawImage(sprite, sx, sy, FRAME_W, FRAME_H,
+                  Math.round(player.x), Math.round(player.y),
+                  FRAME_W, FRAME_H);
+  } else {
+    // fallback rectangle
+    ctx.fillStyle = '#ff0';
+    ctx.fillRect(player.x, player.y, player.w, player.h);
+  }
+
+  ctx.fillStyle = 'rgba(255,255,150,0.2)';
+  ctx.beginPath();
+  ctx.moveTo(player.x + FRAME_W/2, player.y + FRAME_H/2);
+  ctx.lineTo(player.x + FRAME_W/2 + 80, player.y + FRAME_H/2 - 20);
+  ctx.lineTo(player.x + FRAME_W/2 + 80, player.y + FRAME_H/2 + 20);
+  ctx.fill();
+
+  ctx.fillStyle = '#f00';
+  ctx.font = '8px monospace';
+  if (gameState === 'dead') {
+    ctx.fillText('YOU SHOULD NOT BE HERE', 40, 40);
+    ctx.fillText('Press R', 120, 60);
+  } else if (gameState === 'win') {
+    ctx.fillText('CONNECTION LOST', 80, 40);
+  }
+}
+
+// --- LOOP ---
+function loop() {
+  if (keys['r'] && gameState === 'dead') {
+    resetPlayer();
+    gameState = 'play';
+  }
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+resetPlayer();
+loop();
+</script>
+
+</body>
+</html>
 
